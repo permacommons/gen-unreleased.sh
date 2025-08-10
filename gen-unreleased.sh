@@ -41,6 +41,9 @@ Keep bullets terse and include file paths when useful.
 Omit the "## Unreleased changes" header itself. If nothing user-facing changed, output: _No user-facing changes._'
 )"
 
+# Strip <think></think> tags and their content
+CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<think>.*<\/think>//g')"
+
 # Compose full section with the header
 {
   echo "## Unreleased changes"
@@ -62,11 +65,12 @@ if [[ ! -f "$CHANGELOG" ]]; then
 fi
 
 # Replace existing "## Unreleased changes" section up to (but not including) next level-2 heading.
-# If it doesn't exist, append it at the end.
+# If it doesn't exist, insert it at the top (under the first level 1 heading).
 awk -v NEW="$OUT_TMP" '
   function print_file(f,  l){ while ((getline l < f) > 0) print l; close(f) }
-  BEGIN { replaced=0; skipping=0 }
+  BEGIN { replaced=0; skipping=0; inserted=0; first_h1_seen=0 }
   {
+    # Handle replacement of existing section
     if (!replaced && $0 ~ /^##[[:space:]]+Unreleased[[:space:]]+changes[[:space:]]*$/) {
       print_file(NEW)
       replaced=1
@@ -77,10 +81,25 @@ awk -v NEW="$OUT_TMP" '
       if ($0 ~ /^##[[:space:]]+/) { skipping=0; print $0 }
       next
     }
+
+    # Handle insertion after first level 1 heading (only if no replacement occurred)
+    if (!replaced && !inserted && !first_h1_seen && $0 ~ /^#[^#]/) {
+      first_h1_seen=1
+      print $0
+      next
+    }
+    if (!replaced && !inserted && first_h1_seen && $0 !~ /^[[:space:]]*$/) {
+      print ""
+      print_file(NEW)
+      inserted=1
+      print $0
+      next
+    }
+
     print $0
   }
   END {
-    if (!replaced) {
+    if (!replaced && !inserted) {
       print ""
       print_file(NEW)
     }
