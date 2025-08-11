@@ -20,7 +20,7 @@ trap 'rm -f "$REPO_TMP" "$DIFF_TMP" "$OUT_TMP"' EXIT
 
 # --- build repo context
 # Current directory as baseline
-repo2prompt > "$REPO_TMP"
+repo2prompt -e CHANGELOG.md > "$REPO_TMP"
 
 # --- compute diff since the most recent tag (fallback: initial commit)
 if LAST_TAG="$(git describe --tags --abbrev=0 2>/dev/null)"; then
