@@ -5,6 +5,7 @@ set -euo pipefail
 
 MODEL="${LLM_MODEL:-venice/deepseek-r1-671b}"
 CHANGELOG="${CHANGELOG_PATH:-CHANGELOG.md}"
+VERSION="${VERSION:-}"
 
 # --- sanity checks
 command -v git >/dev/null || { echo "git not found" >&2; exit 1; }
@@ -38,6 +39,13 @@ echo "Commit messages collected:" >&2
 cat "$COMMIT_TMP" >&2
 echo "" >&2
 
+# --- determine section title
+if [[ -n "$VERSION" ]]; then
+  SECTION_TITLE="$VERSION"
+else
+  SECTION_TITLE="Unreleased changes"
+fi
+
 # --- call llm (Option A: repo as fragment; diff and commits via stdin). Return body only.
 CHANGE_BODY="$(
   {
@@ -46,22 +54,22 @@ CHANGE_BODY="$(
     echo ""
     echo "=== CODE DIFF ==="
     cat "$DIFF_TMP"
-  } | llm -m "$MODEL" -f "$REPO_TMP" -s '
+  } | llm -m "$MODEL" -f "$REPO_TMP" -s "
 You are a precise release-notes writer.
 The fragment is the BASELINE REPOSITORY; STDIN contains both COMMIT MESSAGES and a UNIFIED DIFF against that baseline.
-Produce ONLY the Markdown BODY for a section titled "## Unreleased changes" in Keep a Changelog style.
+Produce ONLY the Markdown BODY for a section titled \"## $SECTION_TITLE\" in Keep a Changelog style.
 Subsections (include only if non-empty): Highlights, Added, Changed, Fixed, Removed, Deprecated, Security, Breaking.
 Keep bullets terse and include file paths when useful.
 Use the commit messages to understand the intent of the changes, and the diff to see the actual implementation.
-Omit the "## Unreleased changes" header itself. If nothing user-facing changed, output: _No user-facing changes._'
+Omit the \"## $SECTION_TITLE\" header itself. If nothing user-facing changed, output: _No user-facing changes._"
 )"
 
-# Strip <think></think> tags and their content
+# Strip <think> tags and their content
 CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<think>.*<\/think>//g')"
 
 # Compose full section with the header
 {
-  echo "## Unreleased changes"
+  echo "## $SECTION_TITLE"
   echo
   # Trim leading blank lines from model output
   printf '%s\n' "$CHANGE_BODY" | sed '1{/^[[:space:]]*$/d;}'
@@ -75,18 +83,24 @@ if [[ ! -f "$CHANGELOG" ]]; then
     echo
     cat "$OUT_TMP"
   } > "$CHANGELOG"
-  echo "Created $CHANGELOG with Unreleased section." >&2
+  echo "Created $CHANGELOG with $SECTION_TITLE section." >&2
   exit 0
 fi
 
-# Replace existing "## Unreleased changes" section up to (but not including) next level-2 heading.
+# Replace existing section with the same title up to (but not including) next level-2 heading.
 # If it doesn't exist, insert it at the top (under the first level 1 heading).
-awk -v NEW="$OUT_TMP" '
+awk -v NEW="$OUT_TMP" -v TITLE="$SECTION_TITLE" '
   function print_file(f,  l){ while ((getline l < f) > 0) print l; close(f) }
-  BEGIN { replaced=0; skipping=0; inserted=0; first_h1_seen=0 }
+  BEGIN { 
+    replaced=0; 
+    skipping=0; 
+    inserted=0; 
+    first_h1_seen=0;
+    pattern="^##[[:space:]]+" TITLE "[[:space:]]*$";
+  }
   {
     # Handle replacement of existing section
-    if (!replaced && $0 ~ /^##[[:space:]]+Unreleased[[:space:]]+changes[[:space:]]*$/) {
+    if (!replaced && match($0, pattern)) {
       print_file(NEW)
       replaced=1
       skipping=1
@@ -121,4 +135,4 @@ awk -v NEW="$OUT_TMP" '
   }
 ' "$CHANGELOG" > "${CHANGELOG}.tmp" && mv "${CHANGELOG}.tmp" "$CHANGELOG"
 
-echo "Updated $CHANGELOG: Unreleased section refreshed." >&2
+echo "Updated $CHANGELOG: $SECTION_TITLE section refreshed." >&2
