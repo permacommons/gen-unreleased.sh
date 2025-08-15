@@ -16,7 +16,8 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "Not in a git repo
 REPO_TMP="$(mktemp)"
 DIFF_TMP="$(mktemp)"
 OUT_TMP="$(mktemp)"
-trap 'rm -f "$REPO_TMP" "$DIFF_TMP" "$OUT_TMP"' EXIT
+COMMIT_TMP="$(mktemp)"
+trap 'rm -f "$REPO_TMP" "$DIFF_TMP" "$OUT_TMP" "$COMMIT_TMP"' EXIT
 
 # --- build repo context
 # Current directory as baseline
@@ -30,14 +31,28 @@ else
 fi
 git diff --no-color -U0 "${BASE}..HEAD" > "$DIFF_TMP"
 
-# --- call llm (Option A: repo as fragment; diff via stdin). Return body only.
+# --- get commit messages since the most recent tag (fallback: initial commit)
+echo "Collecting commit messages since $BASE..." >&2
+git log --no-color --pretty=format:"- %s (%h)" "${BASE}..HEAD" > "$COMMIT_TMP"
+echo "Commit messages collected:" >&2
+cat "$COMMIT_TMP" >&2
+echo "" >&2
+
+# --- call llm (Option A: repo as fragment; diff and commits via stdin). Return body only.
 CHANGE_BODY="$(
-  cat "$DIFF_TMP" | llm -m "$MODEL" -f "$REPO_TMP" -s '
+  {
+    echo "=== COMMIT MESSAGES ==="
+    cat "$COMMIT_TMP"
+    echo ""
+    echo "=== CODE DIFF ==="
+    cat "$DIFF_TMP"
+  } | llm -m "$MODEL" -f "$REPO_TMP" -s '
 You are a precise release-notes writer.
-The fragment is the BASELINE REPOSITORY; STDIN is a UNIFIED DIFF against that baseline.
+The fragment is the BASELINE REPOSITORY; STDIN contains both COMMIT MESSAGES and a UNIFIED DIFF against that baseline.
 Produce ONLY the Markdown BODY for a section titled "## Unreleased changes" in Keep a Changelog style.
 Subsections (include only if non-empty): Highlights, Added, Changed, Fixed, Removed, Deprecated, Security, Breaking.
 Keep bullets terse and include file paths when useful.
+Use the commit messages to understand the intent of the changes, and the diff to see the actual implementation.
 Omit the "## Unreleased changes" header itself. If nothing user-facing changed, output: _No user-facing changes._'
 )"
 
