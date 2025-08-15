@@ -14,10 +14,10 @@ command -v repo2prompt >/dev/null || { echo "repo2prompt not found" >&2; exit 1;
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { echo "Not in a git repo" >&2; exit 1; }
 
 # --- temp files + cleanup
-REPO_TMP="$(mktemp)"
-DIFF_TMP="$(mktemp)"
-OUT_TMP="$(mktemp)"
-COMMIT_TMP="$(mktemp)"
+REPO_TMP="$(mktemp)" || { echo "Failed to create temporary file" >&2; exit 1; }
+DIFF_TMP="$(mktemp)" || { echo "Failed to create temporary file" >&2; exit 1; }
+OUT_TMP="$(mktemp)" || { echo "Failed to create temporary file" >&2; exit 1; }
+COMMIT_TMP="$(mktemp)" || { echo "Failed to create temporary file" >&2; exit 1; }
 trap 'rm -f "$REPO_TMP" "$DIFF_TMP" "$OUT_TMP" "$COMMIT_TMP"' EXIT
 
 # --- build repo context
@@ -64,8 +64,8 @@ Use the commit messages to understand the intent of the changes, and the diff to
 Omit the \"## $SECTION_TITLE\" header itself. If nothing user-facing changed, output: _No user-facing changes._"
 )"
 
-# Strip <think> tags and their content
-CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<think>.*<\/think>//g')"
+# Strip <tool_call> tags and their content
+CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<tool_call>.*<\/think>//g')"
 
 # Compose full section with the header
 {
@@ -96,7 +96,10 @@ awk -v NEW="$OUT_TMP" -v TITLE="$SECTION_TITLE" '
     skipping=0; 
     inserted=0; 
     first_h1_seen=0;
-    pattern="^##[[:space:]]+" TITLE "[[:space:]]*$";
+    # Escape special regex characters in TITLE
+    escaped_title = TITLE;
+    gsub(/[^^$\\.*+?()[\]{}|]/, "\\\\&", escaped_title);
+    pattern="^##[[:space:]]+" escaped_title "[[:space:]]*$";
   }
   {
     # Handle replacement of existing section
