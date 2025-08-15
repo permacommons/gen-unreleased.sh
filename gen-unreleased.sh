@@ -64,8 +64,8 @@ Use the commit messages to understand the intent of the changes, and the diff to
 Omit the \"## $SECTION_TITLE\" header itself. If nothing user-facing changed, output: _No user-facing changes._"
 )"
 
-# Strip <tool_call> tags and their content
-CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<tool_call>.*<\/think>//g')"
+# Strip <think> tags and their content
+CHANGE_BODY="$(printf '%s\n' "$CHANGE_BODY" | sed ':a;N;$!ba;s/<think>.*<\/think>//g')"
 
 # Compose full section with the header
 {
